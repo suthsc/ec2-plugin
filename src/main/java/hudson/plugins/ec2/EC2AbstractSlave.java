@@ -69,6 +69,9 @@ import com.amazonaws.services.ec2.model.StopInstancesRequest;
 import com.amazonaws.services.ec2.model.Tag;
 import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
 
+import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.FINER;
+
 /**
  * Slave running on EC2.
  *
@@ -201,7 +204,7 @@ public abstract class EC2AbstractSlave extends Slave {
                 }
             }
         }
-        
+
         /*
          * If this field is null (as it would be if this object is deserialized and not constructed normally) then
          * we need to explicitly initialize it, otherwise we will cause major blocker issues such as this one which
@@ -554,10 +557,15 @@ public abstract class EC2AbstractSlave extends Slave {
 
     protected boolean isAlive(boolean force) {
         fetchLiveInstanceData(force);
-        if (lastFetchInstance == null)
+        if (lastFetchInstance == null) {
+            LOGGER.log(FINE, "lastFetchInstance is null");
             return false;
-        if (lastFetchInstance.getState().getName().equals(InstanceStateName.Terminated.toString()))
+        }
+        if (lastFetchInstance.getState().getName().equals(InstanceStateName.Terminated.toString())) {
+            LOGGER.log(FINE, "Instance state is Terminated");
             return false;
+        }
+        LOGGER.log(FINE, "Instance is alive!");
         return true;
     }
 
@@ -570,8 +578,12 @@ public abstract class EC2AbstractSlave extends Slave {
          * If we've grabbed the data recently, don't bother getting it again unless we are forced
          */
         long now = System.currentTimeMillis();
-        if ((lastFetchTime > 0) && (now - lastFetchTime < MIN_FETCH_TIME) && !force) {
+        long timeSinceLastFetch = now - lastFetchTime;
+        if ((lastFetchTime > 0) && (timeSinceLastFetch < MIN_FETCH_TIME) && !force) {
+            LOGGER.log(FINE, "Skipping check, {0} is less then {1}", new Object[] {timeSinceLastFetch, MIN_FETCH_TIME});
             return;
+        } else {
+            LOGGER.log(FINER, "Fetching live instance data.");
         }
 
         if (getInstanceId() == null || getInstanceId().isEmpty()) {
@@ -582,7 +594,10 @@ public abstract class EC2AbstractSlave extends Slave {
              * including tags, and then later, when the spot request eventually gets the instanceID correctly we push
              * the saved tags from that random box up to the new spot resulting in confusion and delay.
              */
+            LOGGER.log(FINE, "Unable to establish instance identifier.");
             return;
+        } else {
+            LOGGER.log(FINER, "Instance identifier is {0}", getInstanceId());
         }
 
         Instance i = null;
@@ -590,21 +605,23 @@ public abstract class EC2AbstractSlave extends Slave {
             i = CloudHelper.getInstanceWithRetry(getInstanceId(), getCloud());
         } catch (InterruptedException e) {
             // We'll just retry next time we test for idleness.
-            LOGGER.fine("InterruptedException while get " + getInstanceId()
-                    + " Exception: " + e);
+            LOGGER.log(FINE, e, () -> "InterruptedException while getting Instance {0}" + getInstanceId());
             return;
         }
 
-
         lastFetchTime = now;
         lastFetchInstance = i;
-        if (i == null)
+        if (i == null) {
+            LOGGER.log(FINE, "Instance information is null.");
             return;
+        }
 
         publicDNS = i.getPublicDnsName();
         privateDNS = i.getPrivateIpAddress();
         createdTime = i.getLaunchTime().getTime();
         instanceType = i.getInstanceType();
+        LOGGER.log(FINER, "publicDNS: {0}, privateDNS: {1}, createdDate: {2}, instanceType: {3}",
+                new Object[]{publicDNS, privateDNS, createdTime, instanceType});
 
         /*
          * Only fetch tags from live instance if tags are set. This check is required to mitigate a race condition
@@ -615,6 +632,7 @@ public abstract class EC2AbstractSlave extends Slave {
             for (Tag t : i.getTags()) {
                 tags.add(new EC2Tag(t.getKey(), t.getValue()));
             }
+            LOGGER.log(FINER, "tags: {0}", tags);
         }
     }
 
@@ -735,7 +753,7 @@ public abstract class EC2AbstractSlave extends Slave {
     public boolean isSpecifyPassword() {
         return amiType.isWindows() && ((WindowsData) amiType).isSpecifyPassword();
     }
-    
+
     public boolean isAllowSelfSignedCertificate() {
         return amiType.isWindows() && ((WindowsData) amiType).isAllowSelfSignedCertificate();
     }
