@@ -27,8 +27,7 @@ public class TrackableEC2SpotSlave extends EC2SpotSlave implements TrackedItem {
 
     @Override
     public Id getId() {
-        String nodeName = getInstanceId();
-        LOGGER.log(Level.FINER, "TrackableEC2SpotSlave.getId() : {0}, {1}, {2}", new Object[]{cloudName, templateDescription, nodeName});
-        return new Id(cloudName, templateDescription, nodeName);
+        LOGGER.log(Level.FINER, "TrackableEC2SpotSlave.getId() : {0}/{1}", new Object[]{cloudName, templateDescription});
+        return new Id(cloudName, templateDescription);
     }
 }

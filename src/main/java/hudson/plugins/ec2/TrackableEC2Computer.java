@@ -26,8 +26,7 @@ public class TrackableEC2Computer extends EC2Computer implements TrackedItem {
     @Nullable
     @Override
     public Id getId() {
-        String nodeName = getInstanceId();
-        LOGGER.log(Level.FINER, "TrackableEC2Computer.getId() : {0}, {1}, {2}", new Object[]{cloudName, templateName, nodeName});
-        return new Id(cloudName, templateName, nodeName);
+        LOGGER.log(Level.FINER, "TrackableEC2Computer.getId() : {0}/{1}", new Object[]{cloudName, templateName});
+        return new Id(cloudName, templateName);
     }
 }

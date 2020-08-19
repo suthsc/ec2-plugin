@@ -30,8 +30,7 @@ public class TrackableEC2OndemandSlave extends EC2OndemandSlave implements Track
 
     @Override
     public ProvisioningActivity.Id getId() {
-        String nodeName = getInstanceId();
-        LOGGER.log(Level.FINER, "TrackableEC2OndemandSlave.getId() : {0}, {1}, {2}", new Object[]{cloudName, templateDescription, nodeName});
-        return new ProvisioningActivity.Id(cloudName, templateDescription, nodeName);
+        LOGGER.log(Level.FINER, "TrackableEC2OndemandSlave.getId() : {0}/{1}", new Object[]{cloudName, templateDescription});
+        return new ProvisioningActivity.Id(cloudName, templateDescription);
     }
 }

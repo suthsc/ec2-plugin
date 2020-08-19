@@ -91,6 +91,7 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
 import static hudson.plugins.ec2.SlaveTemplate.ProvisionOptions.ALLOW_CREATE;
+import static hudson.plugins.ec2.SlaveTemplate.ProvisionOptions.FORCE_CREATE;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 
@@ -670,7 +671,7 @@ public abstract class EC2Cloud extends Cloud {
             try {
                 EnumSet<ProvisionOptions> provisionOptions;
                 if (forceCreateNew)
-                    provisionOptions = EnumSet.of(ProvisionOptions.FORCE_CREATE);
+                    provisionOptions = EnumSet.of(FORCE_CREATE);
                 else
                     provisionOptions = EnumSet.of(ALLOW_CREATE);
 
@@ -715,7 +716,7 @@ public abstract class EC2Cloud extends Cloud {
         }
         LOGGER.log(Level.INFO, "{0}. Attempting provision finished, excess workload: {1}",
                 new Object[]{t, excessWorkload});
-        LOGGER.log(Level.INFO, "We have now {0} computers, waiting for {1} more",
+        LOGGER.log(Level.INFO, "We have now {0} computers after provisioning {1} agent",
                 new Object[]{jenkinsInstance.getComputers().length, plannedNodes.size()});
         return plannedNodes;
     }
