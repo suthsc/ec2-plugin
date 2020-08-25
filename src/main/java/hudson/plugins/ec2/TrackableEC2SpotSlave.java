@@ -20,14 +20,16 @@ import java.util.logging.Logger;
 public class TrackableEC2SpotSlave extends EC2SpotSlave implements TrackedItem {
 
     private static final Logger LOGGER = Logger.getLogger(TrackableEC2SpotSlave.class.getName());
+    private final Id id;
 
     public TrackableEC2SpotSlave(String name, String spotInstanceRequestId, String templateDescription, String remoteFS, int numExecutors, Mode mode, String initScript, String tmpDir, String labelString, List<? extends NodeProperty<?>> nodeProperties, String remoteAdmin, String jvmopts, String idleTerminationMinutes, List<EC2Tag> tags, String cloudName, int launchTimeout, AMITypeData amiType, ConnectionStrategy connectionStrategy, int maxTotalUses) throws Descriptor.FormException, IOException {
         super(name, spotInstanceRequestId, templateDescription, remoteFS, numExecutors, mode, initScript, tmpDir, labelString, nodeProperties, remoteAdmin, jvmopts, idleTerminationMinutes, tags, cloudName, launchTimeout, amiType, connectionStrategy, maxTotalUses);
+        id = new Id(cloudName, templateDescription, instanceId);
+        LOGGER.log(Level.FINER, "TrackableEC2SpotSlave : {0}", id);
     }
 
     @Override
     public Id getId() {
-        LOGGER.log(Level.FINER, "TrackableEC2SpotSlave.getId() : {0}/{1}", new Object[]{cloudName, templateDescription});
-        return new Id(cloudName, templateDescription);
+        return id;
     }
 }

@@ -15,18 +15,17 @@ import java.util.logging.Logger;
 public class TrackableEC2Computer extends EC2Computer implements TrackedItem {
 
     private static final Logger LOGGER = Logger.getLogger(TrackableEC2Computer.class.getName());
-    private final String cloudName;
-    private final String templateName;
+    private final Id id;
+
     public TrackableEC2Computer(EC2AbstractSlave slave) {
         super(slave);
-        cloudName = slave.cloudName;
-        templateName = slave.templateDescription;
+        id = new Id(slave.cloudName, slave.templateDescription, slave.getInstanceId());
+        LOGGER.log(Level.FINER, "TrackableEC2Computer : {0}", id);
     }
 
     @Nullable
     @Override
     public Id getId() {
-        LOGGER.log(Level.FINER, "TrackableEC2Computer.getId() : {0}/{1}", new Object[]{cloudName, templateName});
-        return new Id(cloudName, templateName);
+        return id;
     }
 }

@@ -20,9 +20,26 @@ package hudson.plugins.ec2;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.*;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.auth.InstanceProfileCredentialsProvider;
+import com.amazonaws.auth.STSAssumeRoleSessionCredentialsProvider;
 import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.model.*;
+import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
+import com.amazonaws.services.ec2.model.DescribeInstancesResult;
+import com.amazonaws.services.ec2.model.DescribeSpotInstanceRequestsRequest;
+import com.amazonaws.services.ec2.model.DescribeSpotInstanceRequestsResult;
+import com.amazonaws.services.ec2.model.Filter;
+import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.InstanceStateName;
+import com.amazonaws.services.ec2.model.InstanceType;
+import com.amazonaws.services.ec2.model.KeyPair;
+import com.amazonaws.services.ec2.model.KeyPairInfo;
+import com.amazonaws.services.ec2.model.Reservation;
+import com.amazonaws.services.ec2.model.SpotInstanceRequest;
+import com.amazonaws.services.ec2.model.Tag;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest;
@@ -31,7 +48,12 @@ import com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsImpl;
 import com.cloudbees.jenkins.plugins.awscredentials.AmazonWebServicesCredentials;
 import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPrivateKey;
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
-import com.cloudbees.plugins.credentials.*;
+import com.cloudbees.plugins.credentials.Credentials;
+import com.cloudbees.plugins.credentials.CredentialsMatchers;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.CredentialsStore;
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
@@ -50,7 +72,11 @@ import hudson.plugins.ec2.util.AmazonEC2Factory;
 import hudson.security.ACL;
 import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner.PlannedNode;
-import hudson.util.*;
+import hudson.util.FormValidation;
+import hudson.util.HttpResponses;
+import hudson.util.ListBoxModel;
+import hudson.util.Secret;
+import hudson.util.StreamTaskListener;
 import jenkins.model.Jenkins;
 import jenkins.model.JenkinsLocationConfiguration;
 import org.apache.commons.lang.StringUtils;
@@ -65,7 +91,11 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.servlet.ServletException;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.Proxy;
@@ -92,10 +122,10 @@ import java.util.logging.SimpleFormatter;
 
 import static hudson.plugins.ec2.SlaveTemplate.ProvisionOptions.ALLOW_CREATE;
 import static hudson.plugins.ec2.SlaveTemplate.ProvisionOptions.FORCE_CREATE;
+import static java.util.logging.Level.FINER;
+import static java.util.logging.Level.INFO;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
-
-import org.kohsuke.stapler.interceptor.RequirePOST;
 
 /**
  * Hudson's view of EC2.
@@ -696,16 +726,28 @@ public abstract class EC2Cloud extends Cloud {
         final SlaveTemplate t = getTemplate(label);
         List<PlannedNode> plannedNodes = new ArrayList<>();
         Jenkins jenkinsInstance = Jenkins.get();
+        boolean cloudStatsEnabled = jenkinsInstance.getPlugin("cloud-stats") != null;
 
         while (excessWorkload > 0 && !jenkinsInstance.isQuietingDown() && !jenkinsInstance.isTerminating()) {
             try {
+
                 int numExecutors = t.getNumExecutors();
                 LOGGER.log(Level.INFO, "{0}. Attempting to provision slave needed by excess workload of {1} units",
                         new Object[]{t, excessWorkload});
+                String identifier = UUID.randomUUID().toString();
 
-                ProvisioningActivity.Id id = new ProvisioningActivity.Id(name, t.getDisplayName());
-                Future<Node> task = Computer.threadPoolForRemoting.submit(new NodeCallable(this, t, ALLOW_CREATE));
-                plannedNodes.add(new TrackedPlannedNode(id, numExecutors, task));
+                if (cloudStatsEnabled) {
+
+                    ProvisioningActivity.Id id = new ProvisioningActivity.Id(name, t.getDisplayName(), identifier);
+                    Future<Node> task = Computer.threadPoolForRemoting.submit(new NodeCallable(this, t, ALLOW_CREATE));
+                    plannedNodes.add(new TrackedPlannedNode(id, numExecutors, task));
+
+                } else {
+
+                    Future<Node> task = Computer.threadPoolForRemoting.submit(new NodeCallable(this, t, ALLOW_CREATE));
+                    plannedNodes.add(new PlannedNode(identifier, task, numExecutors));
+
+                }
 
                 excessWorkload -= numExecutors;
 
@@ -721,13 +763,11 @@ public abstract class EC2Cloud extends Cloud {
         return plannedNodes;
     }
 
-    private static final class NodeCallable implements Callable<Node> {
+    private static class NodeCallable implements Callable<Node> {
 
         private static final int SINGLE_INSTANCE = 1;
 
         private static final transient ReentrantLock agentCountingLock = new ReentrantLock();
-
-//        private int retryCount = 0;
 
         private final EC2Cloud cloud;
         private final SlaveTemplate template;
@@ -1254,7 +1294,7 @@ public abstract class EC2Cloud extends Cloud {
                 for (Cloud cloud : instance.clouds) {
                     if (cloud instanceof EC2Cloud) {
                         EC2Cloud ec2_cloud = (EC2Cloud) cloud;
-                        LOGGER.finer(() -> "Checking EC2 Connection on: " + ec2_cloud.getDisplayName());
+                        LOGGER.log(FINER, () -> "Checking EC2 Connection on: " + ec2_cloud.getDisplayName());
                         try {
                             if (ec2_cloud.connection != null) {
                                 List<Filter> filters = new ArrayList<>();
@@ -1263,7 +1303,7 @@ public abstract class EC2Cloud extends Cloud {
                                 ec2_cloud.connection.describeInstances(dir);
                             }
                         } catch (AmazonClientException e) {
-                            LOGGER.finer(() -> "Reconnecting to EC2 on: " + ec2_cloud.getDisplayName());
+                            LOGGER.log(INFO, e, () -> "Reconnecting to EC2 on: {0}" + ec2_cloud.getDisplayName());
                             ec2_cloud.reconnectToEc2();
                         }
                     }
