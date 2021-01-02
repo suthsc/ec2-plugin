@@ -51,6 +51,10 @@ import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.cloudstats.CloudStatistics;
+import org.jenkinsci.plugins.cloudstats.PhaseExecutionAttachment;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity.Id;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
@@ -68,6 +72,10 @@ import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.StopInstancesRequest;
 import com.amazonaws.services.ec2.model.Tag;
 import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
+
+import static java.util.logging.Level.FINE;
+import static org.jenkinsci.plugins.cloudstats.ProvisioningActivity.Phase.PROVISIONING;
+import static org.jenkinsci.plugins.cloudstats.ProvisioningActivity.Status.OK;
 
 /**
  * Slave running on EC2.
@@ -201,7 +209,7 @@ public abstract class EC2AbstractSlave extends Slave {
                 }
             }
         }
-        
+
         /*
          * If this field is null (as it would be if this object is deserialized and not constructed normally) then
          * we need to explicitly initialize it, otherwise we will cause major blocker issues such as this one which
@@ -398,7 +406,15 @@ public abstract class EC2AbstractSlave extends Slave {
 
     @Override
     public Computer createComputer() {
-        return new EC2Computer(this);
+        if (Jenkins.get().getPlugin("cloud-stats") != null) {
+            Id id = new Id(cloudName, templateDescription, getInstanceId());
+            ProvisioningActivity activity = new ProvisioningActivity(id);
+            PhaseExecutionAttachment attachment = new PhaseExecutionAttachment(OK, "Computer");
+            CloudStatistics.get().attach(activity, PROVISIONING, attachment);
+            return new TrackableEC2Computer(this);
+        } else {
+            return new EC2Computer(this);
+        }
     }
 
     /**
@@ -536,7 +552,7 @@ public abstract class EC2AbstractSlave extends Slave {
         int port = 0;
         try {
             port = Integer.parseInt(sshPort);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
         return port != 0 ? port : 22;
     }
@@ -554,11 +570,7 @@ public abstract class EC2AbstractSlave extends Slave {
 
     protected boolean isAlive(boolean force) {
         fetchLiveInstanceData(force);
-        if (lastFetchInstance == null)
-            return false;
-        if (lastFetchInstance.getState().getName().equals(InstanceStateName.Terminated.toString()))
-            return false;
-        return true;
+        return lastFetchInstance != null && !lastFetchInstance.getState().getName().equals(InstanceStateName.Terminated.toString());
     }
 
     /*
@@ -590,8 +602,7 @@ public abstract class EC2AbstractSlave extends Slave {
             i = CloudHelper.getInstanceWithRetry(getInstanceId(), getCloud());
         } catch (InterruptedException e) {
             // We'll just retry next time we test for idleness.
-            LOGGER.fine("InterruptedException while get " + getInstanceId()
-                    + " Exception: " + e);
+            LOGGER.log(FINE, e, () -> "InterruptedException while getting information for " + getInstanceId());
             return;
         }
 
@@ -611,7 +622,7 @@ public abstract class EC2AbstractSlave extends Slave {
          * when fetchLiveInstanceData() is called before pushLiveInstancedata().
          */
         if(!i.getTags().isEmpty()) {
-            tags = new LinkedList<EC2Tag>();
+            tags = new LinkedList<>();
             for (Tag t : i.getTags()) {
                 tags.add(new EC2Tag(t.getKey(), t.getValue()));
             }
@@ -665,7 +676,7 @@ public abstract class EC2AbstractSlave extends Slave {
 
         /* Now that we have our instance, we can set tags on it */
         if (inst != null && tags != null && !tags.isEmpty()) {
-            HashSet<Tag> instTags = new HashSet<Tag>();
+            HashSet<Tag> instTags = new HashSet<>();
 
             for (EC2Tag t : tags) {
                 instTags.add(new Tag(t.getName(), t.getValue()));
@@ -735,7 +746,7 @@ public abstract class EC2AbstractSlave extends Slave {
     public boolean isSpecifyPassword() {
         return amiType.isWindows() && ((WindowsData) amiType).isSpecifyPassword();
     }
-    
+
     public boolean isAllowSelfSignedCertificate() {
         return amiType.isWindows() && ((WindowsData) amiType).isAllowSelfSignedCertificate();
     }
