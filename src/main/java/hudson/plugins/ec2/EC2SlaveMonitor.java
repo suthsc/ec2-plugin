@@ -26,7 +26,7 @@ public class EC2SlaveMonitor extends AsyncPeriodicWork {
 
     public EC2SlaveMonitor() {
         super("EC2 alive slaves monitor");
-        recurrencePeriod = Long.getLong("jenkins.ec2.checkAlivePeriod", TimeUnit.MINUTES.toMillis(10));
+        recurrencePeriod = Long.getLong("jenkins.ec2.checkAlivePeriod", TimeUnit.MINUTES.toMillis(1));
         LOGGER.log(Level.FINE, "EC2 check alive period is {0}ms", recurrencePeriod);
     }
 

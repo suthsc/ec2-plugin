@@ -28,7 +28,7 @@ import hudson.Util;
 import hudson.model.Node;
 import hudson.slaves.SlaveComputer;
 import java.io.IOException;
-
+import java.util.logging.Logger;
 
 import org.kohsuke.stapler.HttpRedirect;
 import org.kohsuke.stapler.HttpResponse;
@@ -37,10 +37,15 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.GetConsoleOutputRequest;
 import com.amazonaws.services.ec2.model.Instance;
 
+import javax.annotation.Nullable;
+
 /**
  * @author Kohsuke Kawaguchi
  */
 public class EC2Computer extends SlaveComputer {
+
+    private static final Logger LOGGER = Logger.getLogger(EC2Computer.class.getName());
+
     /**
      * Cached description of this EC2 instance. Lazily fetched.
      */
@@ -79,7 +84,7 @@ public class EC2Computer extends SlaveComputer {
         return node == null ? null : node.getCloud();
     }
 
-    @CheckForNull
+    @Nullable
     public SlaveTemplate getSlaveTemplate() {
         EC2AbstractSlave node = getNode();
         if (node != null) {
@@ -106,7 +111,7 @@ public class EC2Computer extends SlaveComputer {
         GetConsoleOutputRequest request = new GetConsoleOutputRequest(getInstanceId());
         return ec2.getConsoleOutput(request).getDecodedOutput();
     }
-    
+
     /**
      * Obtains the instance state description in EC2.
      *
@@ -171,7 +176,7 @@ public class EC2Computer extends SlaveComputer {
      *
      * @return remote admin or {@code null} if the associated {@link Node} is {@code null}
      */
-    @CheckForNull
+    @Nullable
     public String getRemoteAdmin() {
         EC2AbstractSlave node = getNode();
         return node == null ? null : node.getRemoteAdmin();
