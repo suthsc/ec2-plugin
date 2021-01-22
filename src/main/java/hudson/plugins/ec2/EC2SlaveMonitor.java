@@ -51,8 +51,12 @@ public class EC2SlaveMonitor extends AsyncPeriodicWork {
                         ec2Slave.terminate();
                     }
                 } catch (AmazonClientException e) {
-                    LOGGER.info("EC2 instance is dead and failed to terminate: " + ec2Slave.getInstanceId());
-                    removeNode(ec2Slave);
+                    if (new RequestExpiredPredicate().test(e)) {
+                        LOGGER.info(() -> "Request Expired, waiting for reconnect before removing node");
+                    } else {
+                        LOGGER.info("EC2 instance is dead and failed to terminate: " + ec2Slave.getInstanceId());
+                        removeNode(ec2Slave);
+                    }
                 }
             }
         }
@@ -62,7 +66,7 @@ public class EC2SlaveMonitor extends AsyncPeriodicWork {
         try {
             Jenkins.get().removeNode(ec2Slave);
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to remove node: " + ec2Slave.getInstanceId());
+            LOGGER.log(Level.WARNING, () -> "Failed to remove node: " + ec2Slave.getInstanceId());
         }
     }
 
