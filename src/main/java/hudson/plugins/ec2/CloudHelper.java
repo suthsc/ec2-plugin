@@ -20,6 +20,7 @@ import java.util.logging.Logger;
 
 final class CloudHelper {
     private static final Logger LOGGER = Logger.getLogger(CloudHelper.class.getName());
+    private static final RequestExpiredPredicate requestExpiredPredicate = new RequestExpiredPredicate();
 
     static Instance getInstanceWithRetry(String instanceId, EC2Cloud cloud) throws AmazonClientException, InterruptedException {
         // Sometimes even after a successful RunInstances, DescribeInstances
@@ -33,7 +34,7 @@ final class CloudHelper {
                     // retry in 5 seconds.
                     Thread.sleep(5000);
                     continue;
-                } else if (new RequestExpiredPredicate().test(e)) {
+                } else if (requestExpiredPredicate.test(e)) {
                     cloud.reconnect();
                     // retry in 5 seconds.
                     Thread.sleep(5000);
